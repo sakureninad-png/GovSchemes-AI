@@ -136,8 +136,8 @@ gschemesai/
 
 ```bash
 # Clone the repository
-git clone https://github.com/lucifer0906/Gschemes.git
-cd Gschemes
+git clone https://github.com/sakureninad-png/GovSchemes-AI.git
+cd GovSchemes-AI
 
 # Install dependencies
 npm install
