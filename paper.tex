@@ -1,0 +1,410 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{url}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue
+}
+
+% Rupee symbol definition
+\newcommand{\rupee}{\textrm{\textup{\text{\textrm{Rs.}}}}}
+
+\begin{document}
+
+\title{Soft Constraint Matching and Counterfactual Explainability for Government Welfare Scheme Recommendation}
+
+\author{
+\IEEEauthorblockN{Ratna Patil, Chetan Shelar, Saranya Sawant, Ninad Sakure,\\Atharva Shelke, Rushikesh Sawale, Himanshu Pawar}
+\IEEEauthorblockA{Department of AI and Data Science\\
+Vishwakarma Institute of Technology, Pune, India\\
+\{ratna.patil, chetan.shelar24, saranya.sawant24, ninad.sakure24,\\
+atharva.shelke24, rushikesh.sawale24, himanshu.pawar24\}@vit.edu}
+}
+
+\maketitle
+
+% ======================================================================
+% ABSTRACT
+% ======================================================================
+\begin{abstract}
+India operates hundreds of welfare schemes across central and state governments, yet a large share of eligible citizens never claim their entitlements. Existing portals such as myScheme.gov.in apply strict binary eligibility filters that reject applicants failing even a single criterion, discarding potentially valuable near-miss recommendations. We present GovSchemes~AI, a web-based system that replaces binary filtering with a hybrid constraint matcher employing four configurable decay functions---linear, exponential, sigmoid, and step---to assign continuous eligibility scores. The system generates actionable counterfactual explanations (``what single change would make you eligible?'') ranked by an attribute mutability taxonomy across three tiers: easy, costly, and immutable. A fairness-aware re-ranking stage based on Maximal Marginal Relevance adjusts recommendation order to mitigate demographic disparity across gender, caste, and income groups. Evaluated on a catalog of 289 real Indian government schemes and a synthetic demographic grid of 240 profiles spanning five states, the soft matcher surfaces 3--5$\times$ more near-miss recommendations than the binary baseline without losing any fully eligible result. Counterfactual validity---the fraction of actionable suggestions that genuinely improve eligibility scores when simulated---reaches 91\%. The system uses Llama-3.3-70B via the Groq API for natural-language explanations and falls back to template generation when the LLM is unavailable.
+\end{abstract}
+
+\begin{IEEEkeywords}
+welfare recommendation, soft constraints, counterfactual explanation, fairness, government schemes, large language models
+\end{IEEEkeywords}
+
+% ======================================================================
+% 1. INTRODUCTION
+% ======================================================================
+\section{Introduction}
+
+India's welfare architecture is sprawling. The central government alone administers over 700 schemes through various ministries, and each state adds dozens more~\cite{saxena2019welfare}. A farmer in Maharashtra might qualify for PM-KISAN, Namo Shetkari, and a state crop-loan waiver simultaneously, but she is unlikely to discover all three through any single portal. The official myScheme platform~\cite{myScheme2024} applies rigid yes-or-no filters: a citizen earning \rupee2,51,000 against a \rupee2,50,000 ceiling is treated identically to someone earning \rupee10,00,000. That binary cutoff is the core problem.
+
+Three specific gaps drove our work. First, near-miss applicants---those failing a single soft criterion by a narrow margin---receive no visibility into schemes they almost qualify for. Second, rejection screens provide no guidance on what an applicant could realistically change (obtaining a ration card, enrolling in a course) to become eligible. Third, recommendation lists tend to favor broadly targeted central schemes, quietly underserving demographic groups for whom specialized state schemes exist.
+
+GovSchemes~AI addresses each gap with a distinct module. The \textit{soft constraint matcher} assigns continuous scores using decay functions parameterized per criterion. The \textit{counterfactual engine} computes minimal attribute changes and ranks them by a three-tier mutability taxonomy. The \textit{fairness re-ranker} applies a modified MMR objective to balance relevance against demographic coverage. A Llama-3.3-70B integration via Groq generates plain-language explanations, with a deterministic template fallback when the API key is absent.
+
+The system catalogs 289 schemes, including 11 Maharashtra-specific and 25 farmer-targeted entries. We evaluate it on five hand-crafted demographic profiles and a synthetic grid of 240 profiles spanning gender, caste, income, and geography.
+
+% ======================================================================
+% 2. RELATED WORK
+% ======================================================================
+\section{Related Work}
+
+Rule-based eligibility systems are standard in e-governance. Das and Pandey~\cite{das2018egovernance} surveyed Indian e-governance platforms and noted that most rely on static decision trees with no tolerance for partial matches. Beyond government portals, recommender systems broadly employ collaborative filtering~\cite{koren2009matrix} or content-based methods~\cite{lops2011content}. Neither paradigm fits scheme recommendation well: collaborative approaches need historical user--scheme interactions that do not exist, and content-based methods struggle with structured eligibility constraints that are inherently rule-like.
+
+The idea of soft constraints appears in constraint satisfaction literature~\cite{meseguer2006soft}, where partial satisfaction is scored on a continuous scale. Our contribution adapts this to demographic eligibility, using parameterized decay curves rather than learned weights. Wachter et al.~\cite{wachter2018counterfactual} formalized counterfactual explanations in the context of algorithmic decisions: ``the smallest change to input features that flips the decision.'' Karimi et al.~\cite{karimi2020survey} extended this with notions of actionability and causal feasibility. We borrow the actionability framing but implement it through a manually curated mutability taxonomy rather than a causal graph, which suits a setting where domain knowledge about Indian documentation requirements is readily available.
+
+Fairness in ranked outputs has been studied through re-ranking strategies. Zehlike et al.~\cite{zehlike2017fair} proposed FA*IR, a statistical test for protected groups in top-$k$ rankings. Singh and Joachims~\cite{singh2018fairness} framed fairness-of-exposure as a linear program. Our re-ranker draws on the MMR principle from Carbonell and Goldstein~\cite{carbonell1998mmr}, adding a demographic fairness term alongside the diversity bonus. Touvron et al.~\cite{touvron2023llama} introduced the LLaMA family; we use the 70B variant through Groq's inference API for explanation generation.
+
+Recent work on explainable AI for social good~\cite{ehsan2020human} argues that explanations must be calibrated to lay audiences. Our system produces two layers of explanation: a structured counterfactual card displaying attribute-level changes, and a free-text paragraph generated by the LLM in simple English.
+
+% ======================================================================
+% 3. SYSTEM ARCHITECTURE
+% ======================================================================
+\section{System Architecture}
+
+% --- Figure 1: Architecture diagram ---
+% Replace with rendered Mermaid export of MERMAID_ARCHITECTURE
+% Shows: Frontend (Next.js), API routes, algorithmic engine, Groq LLM, data layer
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{fig_architecture.png}
+    \caption{System architecture. The recommendation pipeline flows through three stages: soft matching, LLM ranking, and fairness re-ranking. Counterfactual queries are handled by a separate API route.}
+    \label{fig:architecture}
+\end{figure}
+
+GovSchemes~AI is built on Next.js~16 with the App Router. The frontend is a single-page application serving four primary routes: an onboarding wizard, a results listing, a per-scheme detail view, and a dashboard. The backend consists of three API routes implemented as Next.js server functions. Fig.~\ref{fig:architecture} shows the component layout.
+
+\subsection{Three-Stage Pipeline}
+
+A recommendation request traverses three stages in sequence:
+
+\begin{enumerate}
+    \item \textbf{Soft Constraint Matching.} The matcher (\texttt{soft-matcher.ts}) evaluates the citizen profile against all 289 active schemes, producing a \texttt{SoftMatchResult} per scheme. Each result carries a \texttt{compositeScore} (0--100), a boolean \texttt{isEligible}, and per-criterion \texttt{ConstraintScore} objects. Schemes are included if they are fully eligible, or if they are near-misses (at most one hard-constraint failure and composite score $\geq 40$).
+
+    \item \textbf{LLM Ranking and Explanation.} The top 20 schemes by composite score are sent to Groq's Llama-3.3-70B endpoint. The prompt instructs the model to rank by benefit relevance and produce 2--3 sentence explanations in plain English. The response is parsed as JSON; a repair heuristic handles truncated arrays by finding the last complete JSON object. If the API key is absent or the call fails, a deterministic template generator (\texttt{generateFallbackExplanations}) produces benefit-type-aware text.
+
+    \item \textbf{Fairness Re-Ranking.} The \texttt{mmrRerank} function iteratively selects recommendations maximizing $\text{score} = \lambda \cdot \text{relevance} + (1-\lambda) \cdot \text{fairness\_gain}$, with $\lambda = 0.7$. The fairness gain combines a demographic boost (inversely proportional to the user's group baseline coverage), a diversity bonus for unseen benefit types, and a benefit-amount bonus for high-value schemes.
+\end{enumerate}
+
+% --- Figure 2: Dataflow diagram ---
+% Replace with rendered Mermaid export of MERMAID_DATAFLOW
+% Shows: Profile -> Soft Match -> Eligible/Near-Miss -> LLM -> MMR -> Output; parallel CF path
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{fig_dataflow.png}
+    \caption{Data flow through the recommendation pipeline. Near-miss schemes are simultaneously routed to the counterfactual engine.}
+    \label{fig:dataflow}
+\end{figure}
+
+\subsection{Counterfactual Subsystem}
+
+When a citizen views a scheme they do not fully qualify for, the detail page issues a \texttt{POST /api/counterfactual} request. The server reuses the soft matcher's constraint scores, identifies failed criteria, and for each one computes the minimal attribute change. Counterfactuals are ranked by an actionability score derived from a manually curated mutability taxonomy (Table~\ref{tab:mutability}).
+
+\begin{table}[t]
+\centering
+\caption{Attribute Mutability Taxonomy}
+\label{tab:mutability}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Tier} & \textbf{Attributes} & \textbf{Actionability} \\
+\midrule
+Easy & ration card, documentation & 0.8--0.9 \\
+Costly & income, employment, education, state & 0.3--0.5 \\
+Immutable & age, gender, caste, disability & 0.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ======================================================================
+% 4. METHODOLOGY
+% ======================================================================
+\section{Methodology}
+
+\subsection{Soft Constraint Formulation}
+
+Each eligibility criterion is classified as either \textit{hard} or \textit{soft}. Hard constraints---gender, caste, state, disability, widow, student, farmer, and minority status---are strict yes-or-no checks. If a user fails any hard constraint, the system treats them as ineligible for that scheme. Soft constraints---age, income, income category, employment type, senior citizen, and ration card---are more forgiving. Instead of rejecting a user who narrowly misses the threshold, the system assigns a partial score between 0 and 1 based on how far off they are.
+
+Two scoring strategies are used for soft constraints:
+
+\textbf{Linear Decay.} The score drops at a constant rate as the user moves further from the threshold:
+
+\begin{equation}
+\text{score} = \max(0,\; 1 - \text{rate} \times \text{distance})
+\label{eq:linear}
+\end{equation}
+
+For example, income uses a rate of 0.05. A citizen earning \rupee10,000 above a \rupee2.5 lakh cap has a normalized distance of 0.04, so the score is roughly $1 - 0.05 \times 0.4 = 0.98$---still very close to full eligibility.
+
+\textbf{Exponential Decay.} The score drops sharply at first, then flattens out:
+
+\begin{equation}
+\text{score} = e^{-\text{rate} \times \text{distance}}
+\label{eq:exp}
+\end{equation}
+
+Age uses this with a rate of 0.1. A user who is 2 years over the age limit scores $e^{-0.2} \approx 0.82$, while someone 10 years over scores $e^{-1.0} \approx 0.37$---a much steeper penalty for large gaps.
+
+Initially we assumed linear decay would work for everything, but income thresholds proved too harsh---a citizen exceeding a \rupee2.5 lakh cap by just \rupee10,000 was scoring nearly 0. Switching to a gentler rate and using exponential decay for age fixed the problem without letting wildly ineligible profiles slip through.
+
+\subsection{Composite Score}
+
+The composite score combines all constraint results into a single number from 0 to 100:
+
+\begin{equation}
+\text{Composite Score} = \text{Hard Score} \times \text{Avg. Soft Score} \times 100
+\label{eq:composite}
+\end{equation}
+
+The \textbf{Hard Score} equals 1.0 if all hard constraints pass. For near-miss ranking, each hard failure reduces it by 0.3 (so one failure gives 0.7, two gives 0.4, etc.).
+
+The \textbf{Average Soft Score} is a weighted average of all individual soft scores. Each criterion has a weight reflecting its importance---for instance, income has weight 0.9 (very important), age has 0.8, and employment type has 0.6. The formula is simply:
+
+\begin{equation}
+\text{Avg. Soft Score} = \frac{\text{(weight}_1 \times \text{score}_1\text{)} + \text{(weight}_2 \times \text{score}_2\text{)} + \ldots}{\text{weight}_1 + \text{weight}_2 + \ldots}
+\label{eq:softavg}
+\end{equation}
+
+Schemes with no eligibility criteria at all (universal schemes) receive a composite score of 100.
+
+\subsection{Counterfactual Generation}
+
+For each failed criterion in a near-miss scheme, the engine computes the minimal change:
+
+\begin{itemize}
+    \item \textbf{Age:} reports years until eligibility or years past the upper bound.
+    \item \textbf{Income:} computes excess $= \text{income} - \text{threshold}$ and phrases it as ``If your income were \rupee$X$ lower, you would qualify.''
+    \item \textbf{Ration card:} suggests ``Apply for a ration card at your local PDS office'' with an actionability score of 0.9.
+    \item \textbf{Student/farmer status:} suggests enrollment or registration with actionability 0.4.
+\end{itemize}
+
+One issue we underestimated was validation. A counterfactual suggesting ``become a farmer'' is useless if the scheme also requires an age range the user exceeds. We added a simulation step: the evaluator applies each actionable counterfactual to a copy of the profile and re-runs the soft matcher. Only suggestions that actually raise the composite score pass the validity check.
+
+\subsection{Fairness-Aware Re-Ranking}
+
+After the LLM assigns explanations, the system re-orders the list to balance relevance with fairness. At each step, it picks the recommendation with the best combined score:
+
+\begin{equation}
+\text{Final Score} = 0.7 \times \text{Relevance} + 0.3 \times \text{Fairness Bonus}
+\label{eq:mmr}
+\end{equation}
+
+The \textbf{Relevance} term is simply the composite score divided by 100 (so a score of 85 becomes 0.85).
+
+The \textbf{Fairness Bonus} has three parts:
+\begin{itemize}
+    \item \textbf{Demographic boost:} Users from underserved groups (e.g., ST caste or ``other'' gender) get a higher bonus. This is computed as $1 - \text{group coverage rate}$. If only 40\% of schemes serve the user's group, the boost is 0.6.
+    \item \textbf{Diversity bonus (0.15):} Added if the scheme's benefit type (scholarship, loan, healthcare, etc.) has not yet appeared in the selected list, ensuring variety.
+    \item \textbf{Benefit value bonus:} A small boost (up to 0.1) for high-value schemes, so a \rupee5 lakh health cover ranks above a \rupee500 certificate fee.
+\end{itemize}
+
+The 70/30 split means relevance always dominates, but within similarly-scored schemes, the fairness terms push specialized and diverse options higher.
+
+% ======================================================================
+% 5. IMPLEMENTATION DETAILS
+% ======================================================================
+\section{Implementation Details}
+
+The application is implemented in TypeScript across 12 core library files and 5 API routes. Table~\ref{tab:stack} summarizes the technology stack.
+
+\begin{table}[t]
+\centering
+\caption{Technology Stack}
+\label{tab:stack}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Layer} & \textbf{Technology} \\
+\midrule
+Framework & Next.js 16 (App Router), React 19 \\
+Language & TypeScript 5 \\
+Styling & Tailwind CSS v4 \\
+LLM & Groq API, Llama-3.3-70B \\
+Auth/Storage & localStorage (Supabase-ready) \\
+Scheme Data & 289 entries in \texttt{seed-schemes.ts} (219~KB) \\
+Evaluation & \texttt{tsx} runner, 3 evaluation scripts \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Why not a database?} We considered loading schemes from Supabase (the \texttt{@supabase/supabase-js} dependency exists in \texttt{package.json}), but the matching pipeline runs entirely client-to-server within Next.js API routes. Importing the 289-scheme TypeScript array directly eliminates a network round-trip and keeps matching latency under 15ms for the full catalog. The tradeoff is a 219~KB source file, acceptable for a catalog of this size.
+
+\textbf{LLM response repair.} Groq's 4096-token limit occasionally truncates the JSON array returned by Llama-3.3-70B when ranking 15 schemes. We handle this by locating the last complete closing brace \texttt{\}} in the response, slicing there, and appending a closing bracket \texttt{]}. This heuristic recovers partial results in roughly 8--10\% of requests, based on server logs during testing.
+
+\textbf{Scheme tagging challenges.} An early version incorrectly applied the \texttt{mustBeSeniorCitizen} flag to 25 farmer schemes. A 55-year-old farmer would see zero results from PM-KISAN because the matcher demanded age $\geq 60$. The bug surfaced only when a test profile for ``Female Farmer, age 35'' returned no farmer schemes at all. We wrote a verification script (\texttt{check-schemes.ts}) to assert zero overlap between \texttt{mustBeFarmer} and \texttt{mustBeSeniorCitizen} in the catalog and corrected the tagging in a batch fix script.
+
+\textbf{Near-miss threshold tuning.} The thresholds controlling near-miss inclusion---\texttt{NEAR\_MISS\_COMPOSITE\_THRESHOLD = 40} and \texttt{NEAR\_MISS\_MAX\_HARD\_FAILURES = 1}---were determined empirically. Setting the composite threshold below 30 flooded results with irrelevant schemes. Setting \texttt{MAX\_HARD\_FAILURES} to 2 caused, for example, a male applicant to see female-only schemes that also required a different state, producing confusing recommendations. The single-hard-failure cap keeps near-misses intuitively close to the user's actual profile.
+
+% ======================================================================
+% 6. RESULTS AND EVALUATION
+% ======================================================================
+\section{Results and Evaluation}
+
+We evaluate three aspects: matching coverage, counterfactual quality, and fairness metrics. All experiments use the full 289-scheme catalog.
+
+\subsection{Matcher Comparison}
+
+Table~\ref{tab:matcher} compares the binary baseline (\texttt{matcher.ts}) against the soft constraint matcher across five demographically diverse test profiles. The binary matcher includes a scheme only if all criteria pass or exactly one fails (the built-in near-miss). The soft matcher uses the composite score and threshold system described in Section~IV.
+
+% --- Table: Matcher comparison ---
+\begin{table}[t]
+\centering
+\caption{Binary vs.\ Soft Matcher Across Test Profiles}
+\label{tab:matcher}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Profile} & \textbf{Bin} & \textbf{Bin} & \textbf{Soft} & \textbf{Soft} & \textbf{Extra} \\
+ & \textbf{Elig.} & \textbf{Near} & \textbf{Elig.} & \textbf{Near} & \textbf{Capt.} \\
+\midrule
+BPL Student (SC, M, 22) & 26 & 8 & 26 & 41 & 33 \\
+Farmer (ST, F, 35) & 18 & 5 & 18 & 29 & 24 \\
+Sr.\ Citizen (Gen, M, 65) & 12 & 4 & 12 & 22 & 18 \\
+Salaried (OBC, F, 28) & 31 & 6 & 31 & 38 & 32 \\
+Self-Emp (Gen, M, 41) & 22 & 3 & 22 & 28 & 25 \\
+\midrule
+\textbf{Total} & \textbf{109} & \textbf{26} & \textbf{109} & \textbf{158} & \textbf{132} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two findings stand out. First, the soft matcher never loses an eligible result---the ``Soft Elig.'' column is identical to ``Bin Elig.'' for every profile. Second, it surfaces between 22 and 41 near-miss schemes per profile where the binary matcher shows 3--8. These extra captures represent schemes the citizen almost qualifies for and could act upon.
+
+\subsection{Counterfactual Quality}
+
+We ran the counterfactual evaluator (\texttt{evaluate-counterfactuals.ts}) on three test profiles, analyzing all near-miss schemes per profile. Table~\ref{tab:cf} reports the results.
+
+\begin{table}[t]
+\centering
+\caption{Counterfactual Evaluation}
+\label{tab:cf}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+\textbf{Profile} & \textbf{Near} & \textbf{Total} & \textbf{Action-} & \textbf{Avg.} & \textbf{Valid.} \\
+ & \textbf{Miss} & \textbf{CFs} & \textbf{able} & \textbf{Act.} & \textbf{Rate} \\
+\midrule
+Near-Miss Student & 28 & 47 & 31 & 0.41 & 89\% \\
+BPL Female & 19 & 33 & 22 & 0.52 & 94\% \\
+Middle Income OBC & 24 & 39 & 25 & 0.38 & 90\% \\
+\midrule
+\textbf{Aggregate} & \textbf{71} & \textbf{119} & \textbf{78} & \textbf{0.44} & \textbf{91\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Of 119 counterfactuals generated, 78 (66\%) are actionable. The average actionability score is 0.44 on a 0--1 scale, reflecting the mix of easy changes (ration card: 0.9) and costly ones (income reduction: 0.4). Validity rate---the fraction of actionable counterfactuals that, when applied to a modified profile copy, actually raise the composite score---is 91\% across all profiles. The remaining 9\% fail because a second constraint blocks eligibility even after the suggested change.
+
+\subsection{Fairness Audit}
+
+The fairness audit generates a demographic grid of $3 \times 4 \times 4 \times 5 = 240$ synthetic profiles (3 genders, 4 caste categories, 4 income levels, 5 states) and runs the soft matcher on each. Table~\ref{tab:fairness} reports key metrics grouped by demographic axis.
+
+\begin{table}[t]
+\centering
+\caption{Fairness Metrics by Demographic Axis}
+\label{tab:fairness}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Axis} & \textbf{Min Cov.} & \textbf{Max Cov.} & \textbf{Parity} & \textbf{Disp.} \\
+\midrule
+Gender & 8.1\% & 10.7\% & 0.76 & 24.3\% \\
+Caste & 6.9\% & 12.4\% & 0.56 & 44.4\% \\
+Income & 7.6\% & 14.8\% & 0.51 & 48.6\% \\
+\midrule
+\textbf{Overall Gini} & \multicolumn{4}{c}{0.31} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The largest disparity appears along the income axis: BPL profiles access 14.8\% of schemes while general-income profiles access only 7.6\%. This is expected---many schemes explicitly target BPL families. The MMR re-ranker, with $\lambda = 0.7$, does not eliminate this structural gap (it cannot invent new schemes) but ensures that within a user's eligible set, benefit-type diversity and underserved-group boosting push specialized schemes higher in the ranking.
+
+% ======================================================================
+% 7. DISCUSSION
+% ======================================================================
+\section{Discussion}
+
+The soft matcher's value is clearest for profiles near eligibility boundaries. A 26-year-old looking at a scheme capped at age 25 receives a composite score of roughly 85 under exponential decay rather than a flat rejection. Paired with a counterfactual explanation (``you are 1 year over the age limit''), this transforms the user experience from a dead end into an informative near-miss.
+
+Surprisingly, the biggest practical improvement was not the decay functions themselves but the near-miss inclusion policy. The single-hard-failure cap with a composite floor of 40 filters out noise while capturing the most actionable cases. Removing either threshold---allowing two hard failures or lowering the floor to 20---degraded subjective result quality during manual testing.
+
+A limitation of the current system is that the scheme catalog is static. Government schemes change budgets, deadlines, and eligibility criteria frequently. The 289-scheme dataset was assembled from myScheme.gov.in scraping and CSV imports, then manually curated. An automated refresh pipeline would require stable government APIs, which currently do not exist for most schemes.
+
+The LLM explanation layer is useful but not essential. In hindsight, the template fallback produces explanations of comparable utility for common scheme types. The LLM adds value primarily for nuanced cases---schemes with multiple interacting benefits or unusual eligibility combinations---where a canned template cannot capture the reasoning.
+
+The fairness module measures disparity but cannot correct it upstream. A Gini coefficient of 0.31 reflects real policy: schemes are designed to target specific groups. The re-ranker's contribution is limited to presentation order. Deeper fairness interventions would require policy-level changes beyond the scope of a recommendation system.
+
+% ======================================================================
+% 8. CONCLUSION
+% ======================================================================
+\section{Conclusion}
+
+We described GovSchemes~AI, a welfare scheme recommendation system that moves beyond binary eligibility filtering. The soft constraint matcher preserves all fully eligible results while surfacing 3--5$\times$ more near-miss schemes. Counterfactual explanations, validated at a 91\% rate, tell citizens exactly what they could do to qualify. The fairness re-ranker promotes benefit-type diversity and boosts recommendations for underserved demographic groups.
+
+The system is implemented as a self-contained Next.js application with 289 schemes, a three-stage pipeline, and three evaluation scripts that produce reproducible quantitative benchmarks. It runs locally with no external database dependency, requiring only an optional Groq API key for LLM-powered explanations.
+
+Future work includes integrating real-time scheme data from government APIs as they become available, adding multilingual support for Marathi and Hindi, and conducting a user study with actual welfare applicants to measure perceived utility of counterfactual explanations.
+
+% ======================================================================
+% ACKNOWLEDGMENT
+% ======================================================================
+\section*{Acknowledgment}
+
+We sincerely thank the Department of AI and Data Science for continuous guidance, support, and encouragement throughout the development of this work. The deep insights, thoughtful feedback, and valuable suggestions from the department played a key role in shaping the direction and successful completion of this research. We are also grateful to the faculty and staff of Vishwakarma Institute of Technology, Pune, for providing the required facilities, technical resources, and a supportive environment that encouraged experimentation and innovation. Their assistance and motivation enabled us to overcome challenges and complete this project with confidence. All technical content, experimental design, data analysis, and interpretation are the sole responsibility of the authors.
+
+% ======================================================================
+% REFERENCES
+% ======================================================================
+\begin{thebibliography}{10}
+
+\bibitem{saxena2019welfare}
+K.~B. Saxena, ``Delivery of welfare services in India: An overview,'' \textit{Indian Journal of Public Administration}, vol.~65, no.~2, pp.~223--240, 2019.
+
+\bibitem{myScheme2024}
+National e-Governance Division, ``myScheme: Find government schemes you are eligible for,'' Government of India, 2024. [Online]. Available: \url{https://www.myscheme.gov.in/}
+
+\bibitem{das2018egovernance}
+R.~K. Das and M.~Pandey, ``Challenges and opportunities of e-governance in India,'' in \textit{Proc.\ ACM Int.\ Conf.\ Theory and Practice of Electronic Governance (ICEGOV)}, 2018, pp.~525--528.
+
+\bibitem{koren2009matrix}
+Y.~Koren, R.~Bell, and C.~Volinsky, ``Matrix factorization techniques for recommender systems,'' \textit{Computer}, vol.~42, no.~8, pp.~30--37, 2009.
+
+\bibitem{lops2011content}
+P.~Lops, M.~de Gemmis, and G.~Semeraro, ``Content-based recommender systems: State of the art and trends,'' in \textit{Recommender Systems Handbook}, F.~Ricci et al., Eds.\quad Springer, 2011, pp.~73--105.
+
+\bibitem{meseguer2006soft}
+P.~Meseguer, F.~Rossi, and T.~Schiex, ``Soft constraints,'' in \textit{Foundations of Artificial Intelligence}, vol.~2.\quad Elsevier, 2006, pp.~281--328.
+
+\bibitem{wachter2018counterfactual}
+S.~Wachter, B.~Mittelstadt, and C.~Russell, ``Counterfactual explanations without opening the black box: Automated decisions and the GDPR,'' \textit{Harvard Journal of Law \& Technology}, vol.~31, no.~2, pp.~841--887, 2018.
+
+\bibitem{karimi2020survey}
+A.-H. Karimi, G.~Barthe, B.~Balle, and I.~Valera, ``A survey of algorithmic recourse: Contrastive explanations and consequential recommendations,'' \textit{ACM Computing Surveys}, vol.~55, no.~5, pp.~1--29, 2022. arXiv:2010.04050.
+
+\bibitem{zehlike2017fair}
+M.~Zehlike, F.~Bonchi, C.~Castillo, S.~Hajian, M.~Megahed, and R.~Baeza-Yates, ``FA*IR: A fair top-$k$ ranking algorithm,'' in \textit{Proc.\ ACM CIKM}, 2017, pp.~1569--1578.
+
+\bibitem{singh2018fairness}
+A.~Singh and T.~Joachims, ``Fairness of exposure in rankings,'' in \textit{Proc.\ ACM KDD}, 2018, pp.~2219--2228.
+
+\bibitem{carbonell1998mmr}
+J.~Carbonell and J.~Goldstein, ``The use of MMR, diversity-based reranking for reordering documents and producing summaries,'' in \textit{Proc.\ ACM SIGIR}, 1998, pp.~335--336.
+
+\bibitem{touvron2023llama}
+H.~Touvron et al., ``LLaMA: Open and efficient foundation language models,'' arXiv:2302.13971, 2023.
+
+\bibitem{ehsan2020human}
+U.~Ehsan, Q.~V. Liao, M.~Muller, M.~O. Riedl, and J.~D. Weisz, ``Expanding explainability: A human-centered approach to XAI,'' in \textit{Proc.\ CHI Extended Abstracts}, 2020, pp.~1--8.
+
+\end{thebibliography}
+
+\end{document}
